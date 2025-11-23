@@ -104,28 +104,51 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// 3) Campaign Insights (mit flexiblem Zeitraum)
+// 3) Campaign Insights (fix 30D für jetzt)
 // ---------------------------------------------------
 router.post("/insights/:campaignId", async (req, res) => {
     const { campaignId } = req.params;
-    const { accessToken, datePreset } = req.body;
+    const { accessToken } = req.body;
 
     if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
 
-    // Erlaubte Date-Presets laut Meta
-    const allowedPresets = ["today", "yesterday", "last_7d", "last_30d"];
-    const preset = allowedPresets.includes(datePreset) ? datePreset : "last_30d";
-
     const result = await metaGet(`${campaignId}/insights`, accessToken, {
-        fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas,date_start,date_stop",
-        date_preset: preset
+        fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas",
+        date_preset: "last_30d"
     });
 
     res.json(result);
 });
 
 // ---------------------------------------------------
-// 4) User Info
+// 4) Ads + Creatives (für Creative Library / P2)
+// ---------------------------------------------------
+router.post("/ads/:accountId", async (req, res) => {
+    const { accountId } = req.params;
+    const { accessToken } = req.body;
+
+    if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
+
+    // Ads-Edge des AdAccounts, inkl. Creative + Insights
+    const result = await metaGet(`${accountId}/ads`, accessToken, {
+        fields: [
+            "id",
+            "name",
+            "adset_id",
+            "campaign_id",
+            "status",
+            "creative{id,thumbnail_url,object_type,title,body}",
+            "insights{spend,impressions,clicks,ctr,cpm,website_purchase_roas}"
+        ].join(","),
+        limit: "200",
+        date_preset: "last_30d"
+    });
+
+    res.json(result);
+});
+
+// ---------------------------------------------------
+// 5) User Info
 // ---------------------------------------------------
 router.post("/me", async (req, res) => {
     const { accessToken } = req.body;
