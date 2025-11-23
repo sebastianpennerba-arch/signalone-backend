@@ -1,109 +1,105 @@
-// metaRoutes.js – FINAL LIVE VERSION
-
-import express from "express";
-import fetch from "node-fetch";
+// metaRoutes.js – FINAL LIVE META API (CommonJS)
+const express = require("express");
+const fetch = require("node-fetch");
 
 const router = express.Router();
+const META_API = "https://graph.facebook.com/v21.0";
 
-const META_API_BASE = "https://graph.facebook.com/v21.0";
-
-/**
- * HELPER – API CALL WRAPPER
- */
-async function metaApiGet(endpoint, accessToken, params = {}) {
-    const url = new URL(`${META_API_BASE}/${endpoint}`);
-    
-    // Add query parameters
+/* Helper: Facebook Graph GET */
+async function metaGet(path, accessToken, params = {}) {
+    const url = new URL(`${META_API}/${path}`);
     url.searchParams.append("access_token", accessToken);
-    Object.entries(params).forEach(([key, val]) => {
-        url.searchParams.append(key, val);
-    });
 
-    const response = await fetch(url);
-    const data = await response.json();
+    Object.entries(params).forEach(([k, v]) =>
+        url.searchParams.append(k, v)
+    );
 
-    // Handle errors
+    const res = await fetch(url);
+    const data = await res.json();
+
     if (data.error) {
-        console.error("Meta API Error:", data.error);
+        console.error("Meta API ERROR:", data.error);
         return { success: false, error: data.error };
     }
-
     return { success: true, data };
 }
 
-/**
- * ENDPOINT 1:
- * Hol alle AdAccounts des Users
- */
+/* ================================
+   1. Ad Accounts
+================================ */
 router.post("/adaccounts", async (req, res) => {
     const { accessToken } = req.body;
 
-    if (!accessToken) {
-        return res.json({ success: false, error: "Missing accessToken" });
-    }
+    if (!accessToken)
+        return res.json({ success: false, error: "accessToken missing" });
 
-    const result = await metaApiGet("me/adaccounts", accessToken, {
-        fields: "id,name,account_status,currency,timezone_name"
-    });
+    const result = await metaGet(
+        "me/adaccounts",
+        accessToken,
+        { fields: "id,name,account_status,currency,timezone_name" }
+    );
 
-    return res.json(result);
+    res.json(result);
 });
 
-/**
- * ENDPOINT 2:
- * Hol Kampagnen für einen Account
- */
+/* ================================
+   2. Campaigns for Account
+================================ */
 router.post("/campaigns/:accountId", async (req, res) => {
     const { accessToken } = req.body;
     const { accountId } = req.params;
 
-    if (!accessToken) {
-        return res.json({ success: false, error: "Missing accessToken" });
-    }
+    if (!accessToken)
+        return res.json({ success: false, error: "accessToken missing" });
 
-    const result = await metaApiGet(`${accountId}/campaigns`, accessToken, {
-        fields: "id,name,status,objective,daily_budget"
-    });
+    const result = await metaGet(
+        `${accountId}/campaigns`,
+        accessToken,
+        { fields: "id,name,status,objective,daily_budget" }
+    );
 
-    return res.json(result);
+    res.json(result);
 });
 
-/**
- * ENDPOINT 3:
- * Hol Campaign Insights (KPI Daten)
- */
-router.post("/stats/:campaignId", async (req, res) => {
+/* ================================
+   3. Insights for Campaign
+================================ */
+router.post("/insights/:campaignId", async (req, res) => {
     const { accessToken } = req.body;
     const { campaignId } = req.params;
 
-    if (!accessToken) {
-        return res.json({ success: false, error: "Missing accessToken" });
-    }
+    if (!accessToken)
+        return res.json({ success: false, error: "accessToken missing" });
 
-    const result = await metaApiGet(`${campaignId}/insights`, accessToken, {
-        fields: "spend,impressions,clicks,actions,ctr,cpp,cpm,roas,website_purchase_roas",
-        date_preset: "last_30d"
-    });
+    const result = await metaGet(
+        `${campaignId}/insights`,
+        accessToken,
+        {
+            fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas",
+            date_preset: "last_30d"
+        }
+    );
 
-    return res.json(result);
+    res.json(result);
 });
 
-/**
- * ENDPOINT 4:
- * Hol Informationen über den User
- */
+/* ================================
+   4. User Info
+================================ */
 router.post("/me", async (req, res) => {
     const { accessToken } = req.body;
 
-    if (!accessToken) {
-        return res.json({ success: false, error: "Missing accessToken" });
-    }
+    if (!accessToken)
+        return res.json({ success: false, error: "accessToken missing" });
 
-    const result = await metaApiGet("me", accessToken, {
-        fields: "id,name"
-    });
+    const result = await metaGet(
+        "me",
+        accessToken,
+        { fields: "id,name" }
+    );
 
-    return res.json(result);
+    res.json(result);
 });
 
-export default router;
+
+module.exports = router;
