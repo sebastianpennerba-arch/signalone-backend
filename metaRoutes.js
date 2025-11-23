@@ -6,6 +6,60 @@ const router = express.Router();
 const META_API = "https://graph.facebook.com/v21.0";
 
 // ----------------------------------------------
+// Helper: Meta GET Wrapper
+// ----------------------------------------------
+async function metaGet(path, accessToken, params = {}) {
+    const url = new URL(`${META_API}/${path}`);
+    url.searchParams.append("access_token", accessToken);
+
+    Object.entries(params).forEach(([key, val]) => {
+        url.searchParams.append(key, val);
+    });
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+            console.error("Meta API ERROR:", data.error);
+            return { success: false, error: data.error };
+        }
+
+        return { success: true, data };
+    } catch (err) {
+        console.error("Fetch ERROR:", err);
+        return { success: false, error: err.toString() };
+    }
+}
+
+// ----------------------------------------------
+// Helper: Meta POST Wrapper (Status-Updates etc.)
+// ----------------------------------------------
+async function metaPost(path, accessToken, params = {}) {
+    const url = new URL(`${META_API}/${path}`);
+    url.searchParams.append("access_token", accessToken);
+
+    Object.entries(params).forEach(([key, val]) => {
+        url.searchParams.append(key, val);
+    });
+
+    try {
+        const res = await fetch(url, { method: "POST" });
+        const data = await res.json();
+
+        if (data.error) {
+            console.error("Meta API POST ERROR:", data.error);
+            return { success: false, error: data.error };
+        }
+
+        return { success: true, data };
+    } catch (err) {
+        console.error("Fetch POST ERROR:", err);
+        return { success: false, error: err.toString() };
+    }
+}
+
+// ----------------------------------------------
 // 0) TOKEN EXCHANGE
 // ----------------------------------------------
 router.post("/oauth/token", async (req, res) => {
@@ -46,33 +100,6 @@ router.post("/oauth/token", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// Helper: Meta GET Wrapper
-// ---------------------------------------------------
-async function metaGet(path, accessToken, params = {}) {
-    const url = new URL(`${META_API}/${path}`);
-    url.searchParams.append("access_token", accessToken);
-
-    Object.entries(params).forEach(([key, val]) => {
-        url.searchParams.append(key, val);
-    });
-
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.error) {
-            console.error("Meta API ERROR:", data.error);
-            return { success: false, error: data.error };
-        }
-
-        return { success: true, data };
-    } catch (err) {
-        console.error("Fetch ERROR:", err);
-        return { success: false, error: err.toString() };
-    }
-}
-
-// ---------------------------------------------------
 // 1) Ad Accounts
 // ---------------------------------------------------
 router.post("/adaccounts", async (req, res) => {
@@ -108,6 +135,36 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ---------------------------------------------------
+// 2b) Campaign Status Update (ACTIVE/PAUSED)
+// ---------------------------------------------------
+router.post("/campaigns/:campaignId/status", async (req, res) => {
+    const { campaignId } = req.params;
+    const { accessToken, status } = req.body;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
+    if (!status) {
+        return res.json({ success: false, error: "status missing" });
+    }
+
+    const allowed = ["ACTIVE", "PAUSED"];
+    const upper = String(status).toUpperCase();
+    if (!allowed.includes(upper)) {
+        return res.json({
+            success: false,
+            error: "Unsupported status. Allowed: ACTIVE, PAUSED"
+        });
+    }
+
+    const result = await metaPost(campaignId, accessToken, {
+        status: upper
+    });
+
+    res.json(result);
+});
+
+// ---------------------------------------------------
 // 3) Campaign Insights (mit flexiblem date_preset)
 // ---------------------------------------------------
 router.post("/insights/:campaignId", async (req, res) => {
@@ -122,7 +179,8 @@ router.post("/insights/:campaignId", async (req, res) => {
     const preset = allowedPresets.includes(datePreset) ? datePreset : "last_30d";
 
     const result = await metaGet(`${campaignId}/insights`, accessToken, {
-        fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas,date_start,date_stop",
+        fields:
+            "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas,date_start,date_stop",
         date_preset: preset
     });
 
@@ -151,7 +209,7 @@ router.post("/ads/:accountId", async (req, res) => {
             "creative{id,thumbnail_url,object_type,title,body}",
             "insights{spend,impressions,clicks,ctr,cpm,website_purchase_roas}"
         ].join(","),
-        limit: "200",
+    limit: "200",
         date_preset: "last_30d"
     });
 
