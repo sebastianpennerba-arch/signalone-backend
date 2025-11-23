@@ -6,7 +6,7 @@ gegen ein Access Token tauscht.
 ## Endpoints
 
 - `POST /api/meta/oauth/token`
-  - Body: `{ "code": "…", "redirectUri": "https://amaschine.vercel.app/" }`
+  - Body: `{ "code": "…", "redirectUri": "https://signalone-frontend.onrender.com/" }`
 
 ## Dev
 
