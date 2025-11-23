@@ -24,7 +24,7 @@ app.get("/", (req, res) => {
 
 // --- Meta API Routen ---
 // Ergebnis: https://DEIN-BACKEND.onrender.com/api/meta/oauth/token
-app.use("/api/meta", metaRoutes);
+app.use("/", metaRoutes);
 
 // --- Start Server ---
 const PORT = process.env.PORT || 3000;
