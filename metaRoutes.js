@@ -83,4 +83,13 @@ router.get("/debug/env", (req, res) => {
   });
 });
 
+// DEBUG ENDPOINT – zeigt ob ENV Variablen korrekt geladen wurden
+router.get("/debug/env", (req, res) => {
+  res.json({
+    META_APP_ID: process.env.META_APP_ID || null,
+    META_APP_SECRET_PRESENT: !!process.env.META_APP_SECRET,
+    META_OAUTH_REDIRECT_URI: process.env.META_OAUTH_REDIRECT_URI || null
+  });
+});
+
 module.exports = router;
