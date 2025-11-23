@@ -104,17 +104,21 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// 3) Campaign Insights
+// 3) Campaign Insights (mit flexiblem Zeitraum)
 // ---------------------------------------------------
 router.post("/insights/:campaignId", async (req, res) => {
     const { campaignId } = req.params;
-    const { accessToken } = req.body;
+    const { accessToken, datePreset } = req.body;
 
     if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
 
+    // Erlaubte Date-Presets laut Meta
+    const allowedPresets = ["today", "yesterday", "last_7d", "last_30d"];
+    const preset = allowedPresets.includes(datePreset) ? datePreset : "last_30d";
+
     const result = await metaGet(`${campaignId}/insights`, accessToken, {
-        fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas",
-        date_preset: "last_30d"
+        fields: "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas,date_start,date_stop",
+        date_preset: preset
     });
 
     res.json(result);
