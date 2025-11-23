@@ -1,72 +1,109 @@
-const express = require("express");
-const axios = require("axios");
+// metaRoutes.js – FINAL LIVE VERSION
+
+import express from "express";
+import fetch from "node-fetch";
+
 const router = express.Router();
 
-// -------------------------------------
-// DEBUG → Funktioniert IMMER
-// -------------------------------------
-router.get("/oauth/debug/env", (req, res) => {
-  res.json({
-    META_APP_ID: process.env.META_APP_ID || null,
-    META_APP_SECRET_PRESENT: !!process.env.META_APP_SECRET,
-    META_OAUTH_REDIRECT_URI: process.env.META_OAUTH_REDIRECT_URI || null
-  });
-});
+const META_API_BASE = "https://graph.facebook.com/v21.0";
 
-// -------------------------------------
-// TOKEN EXCHANGE → Funktioniert 100%
-// -------------------------------------
-router.post("/oauth/token", async (req, res) => {
-  try {
-    const { code, redirectUri } = req.body;
+/**
+ * HELPER – API CALL WRAPPER
+ */
+async function metaApiGet(endpoint, accessToken, params = {}) {
+    const url = new URL(`${META_API_BASE}/${endpoint}`);
+    
+    // Add query parameters
+    url.searchParams.append("access_token", accessToken);
+    Object.entries(params).forEach(([key, val]) => {
+        url.searchParams.append(key, val);
+    });
 
-    const appId = process.env.META_APP_ID;
-    const appSecret = process.env.META_APP_SECRET;
-    const configuredRedirect = process.env.META_OAUTH_REDIRECT_URI;
+    const response = await fetch(url);
+    const data = await response.json();
 
-    if (!appId || !appSecret || !configuredRedirect) {
-      return res.status(500).json({
-        error: "Server misconfigured",
-        details: {
-          META_APP_ID: !!appId,
-          META_APP_SECRET: !!appSecret,
-          META_OAUTH_REDIRECT_URI: !!configuredRedirect
-        }
-      });
+    // Handle errors
+    if (data.error) {
+        console.error("Meta API Error:", data.error);
+        return { success: false, error: data.error };
     }
 
-    if (redirectUri !== configuredRedirect) {
-      return res.status(400).json({
-        error: "redirectUri mismatch",
-        expected: configuredRedirect,
-        received: redirectUri
-      });
+    return { success: true, data };
+}
+
+/**
+ * ENDPOINT 1:
+ * Hol alle AdAccounts des Users
+ */
+router.post("/adaccounts", async (req, res) => {
+    const { accessToken } = req.body;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "Missing accessToken" });
     }
 
-    const tokenUrl = "https://graph.facebook.com/v21.0/oauth/access_token";
-
-    const fbResponse = await axios.get(tokenUrl, {
-      params: {
-        client_id: appId,
-        client_secret: appSecret,
-        redirect_uri: configuredRedirect,
-        code
-      }
+    const result = await metaApiGet("me/adaccounts", accessToken, {
+        fields: "id,name,account_status,currency,timezone_name"
     });
 
-    return res.json({
-      success: true,
-      accessToken: fbResponse.data.access_token,
-      expiresIn: fbResponse.data.expires_in,
-      raw: fbResponse.data
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      error: "token_exchange_failed",
-      message: error.response?.data || error.message
-    });
-  }
+    return res.json(result);
 });
 
-module.exports = router;
+/**
+ * ENDPOINT 2:
+ * Hol Kampagnen für einen Account
+ */
+router.post("/campaigns/:accountId", async (req, res) => {
+    const { accessToken } = req.body;
+    const { accountId } = req.params;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "Missing accessToken" });
+    }
+
+    const result = await metaApiGet(`${accountId}/campaigns`, accessToken, {
+        fields: "id,name,status,objective,daily_budget"
+    });
+
+    return res.json(result);
+});
+
+/**
+ * ENDPOINT 3:
+ * Hol Campaign Insights (KPI Daten)
+ */
+router.post("/stats/:campaignId", async (req, res) => {
+    const { accessToken } = req.body;
+    const { campaignId } = req.params;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "Missing accessToken" });
+    }
+
+    const result = await metaApiGet(`${campaignId}/insights`, accessToken, {
+        fields: "spend,impressions,clicks,actions,ctr,cpp,cpm,roas,website_purchase_roas",
+        date_preset: "last_30d"
+    });
+
+    return res.json(result);
+});
+
+/**
+ * ENDPOINT 4:
+ * Hol Informationen über den User
+ */
+router.post("/me", async (req, res) => {
+    const { accessToken } = req.body;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "Missing accessToken" });
+    }
+
+    const result = await metaApiGet("me", accessToken, {
+        fields: "id,name"
+    });
+
+    return res.json(result);
+});
+
+export default router;
