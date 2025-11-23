@@ -1,11 +1,12 @@
-// metaRoutes.js – FULL VERSION (CommonJS + Native Fetch)
+// metaRoutes.js – Backend Meta API Routes (CommonJS + native fetch)
+
 const express = require("express");
 const router = express.Router();
 
 const META_API = "https://graph.facebook.com/v21.0";
 
 // ----------------------------------------------
-// 0) TOKEN EXCHANGE (DER WICHTIGSTE ENDPOINT)
+// 0) TOKEN EXCHANGE
 // ----------------------------------------------
 router.post("/oauth/token", async (req, res) => {
     const { code, redirectUri } = req.body;
@@ -38,7 +39,6 @@ router.post("/oauth/token", async (req, res) => {
             expiresIn: data.expires_in,
             raw: data
         });
-
     } catch (err) {
         console.error("TOKEN EXCHANGE FAILED:", err);
         return res.json({ success: false, error: err.toString() });
@@ -46,7 +46,7 @@ router.post("/oauth/token", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// Tools: Meta GET Wrapper
+// Helper: Meta GET Wrapper
 // ---------------------------------------------------
 async function metaGet(path, accessToken, params = {}) {
     const url = new URL(`${META_API}/${path}`);
@@ -78,7 +78,9 @@ async function metaGet(path, accessToken, params = {}) {
 router.post("/adaccounts", async (req, res) => {
     const { accessToken } = req.body;
 
-    if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
 
     const result = await metaGet("me/adaccounts", accessToken, {
         fields: "id,name,account_status,currency,timezone_name"
@@ -94,7 +96,9 @@ router.post("/campaigns/:accountId", async (req, res) => {
     const { accountId } = req.params;
     const { accessToken } = req.body;
 
-    if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
 
     const result = await metaGet(`${accountId}/campaigns`, accessToken, {
         fields: "id,name,status,objective,daily_budget"
@@ -104,15 +108,16 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// 3) Campaign Insights (mit flexiblem Zeitraum)
+// 3) Campaign Insights (mit flexiblem date_preset)
 // ---------------------------------------------------
 router.post("/insights/:campaignId", async (req, res) => {
     const { campaignId } = req.params;
     const { accessToken, datePreset } = req.body;
 
-    if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
 
-    // Erlaubte Date-Presets laut Meta
     const allowedPresets = ["today", "yesterday", "last_7d", "last_30d"];
     const preset = allowedPresets.includes(datePreset) ? datePreset : "last_30d";
 
@@ -125,12 +130,43 @@ router.post("/insights/:campaignId", async (req, res) => {
 });
 
 // ---------------------------------------------------
-// 4) User Info
+// 4) Ads + Creatives (für Creative Library / P2)
+// ---------------------------------------------------
+router.post("/ads/:accountId", async (req, res) => {
+    const { accountId } = req.params;
+    const { accessToken } = req.body;
+
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
+
+    // Ads-Edge des AdAccounts inkl. Creative & Insights
+    const result = await metaGet(`${accountId}/ads`, accessToken, {
+        fields: [
+            "id",
+            "name",
+            "adset_id",
+            "campaign_id",
+            "status",
+            "creative{id,thumbnail_url,object_type,title,body}",
+            "insights{spend,impressions,clicks,ctr,cpm,website_purchase_roas}"
+        ].join(","),
+        limit: "200",
+        date_preset: "last_30d"
+    });
+
+    res.json(result);
+});
+
+// ---------------------------------------------------
+// 5) User Info
 // ---------------------------------------------------
 router.post("/me", async (req, res) => {
     const { accessToken } = req.body;
 
-    if (!accessToken) return res.json({ success: false, error: "accessToken missing" });
+    if (!accessToken) {
+        return res.json({ success: false, error: "accessToken missing" });
+    }
 
     const result = await metaGet("me", accessToken, {
         fields: "id,name"
