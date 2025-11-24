@@ -1,236 +1,58 @@
-// metaRoutes.js – Backend Meta API Routes (CommonJS + native fetch)
+// metaRoutes.js
+import express from "express";
+import axios from "axios";
 
-const express = require("express");
 const router = express.Router();
 
-const META_API = "https://graph.facebook.com/v21.0";
+// Load env variables
+const META_APP_ID = process.env.META_APP_ID;
+const META_APP_SECRET = process.env.META_APP_SECRET;
 
-// ----------------------------------------------
-// Helper: Meta GET Wrapper
-// ----------------------------------------------
-async function metaGet(path, accessToken, params = {}) {
-    const url = new URL(`${META_API}/${path}`);
-    url.searchParams.append("access_token", accessToken);
-
-    Object.entries(params).forEach(([key, val]) => {
-        url.searchParams.append(key, val);
-    });
-
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.error) {
-            console.error("Meta API ERROR:", data.error);
-            return { success: false, error: data.error };
-        }
-
-        return { success: true, data };
-    } catch (err) {
-        console.error("Fetch ERROR:", err);
-        return { success: false, error: err.toString() };
-    }
-}
-
-// ----------------------------------------------
-// Helper: Meta POST Wrapper (Status-Updates etc.)
-// ----------------------------------------------
-async function metaPost(path, accessToken, params = {}) {
-    const url = new URL(`${META_API}/${path}`);
-    url.searchParams.append("access_token", accessToken);
-
-    Object.entries(params).forEach(([key, val]) => {
-        url.searchParams.append(key, val);
-    });
-
-    try {
-        const res = await fetch(url, { method: "POST" });
-        const data = await res.json();
-
-        if (data.error) {
-            console.error("Meta API POST ERROR:", data.error);
-            return { success: false, error: data.error };
-        }
-
-        return { success: true, data };
-    } catch (err) {
-        console.error("Fetch POST ERROR:", err);
-        return { success: false, error: err.toString() };
-    }
-}
-
-// ----------------------------------------------
-// 0) TOKEN EXCHANGE
-// ----------------------------------------------
+// ---------- TOKEN EXCHANGE ----------
 router.post("/oauth/token", async (req, res) => {
+  try {
     const { code, redirectUri } = req.body;
 
     if (!code || !redirectUri) {
-        return res.json({ success: false, error: "Missing code or redirectUri" });
+      return res.status(400).json({
+        success: false,
+        error: "Missing code or redirectUri"
+      });
     }
 
-    try {
-        const tokenUrl =
-            `https://graph.facebook.com/v21.0/oauth/access_token?` +
-            new URLSearchParams({
-                client_id: process.env.META_APP_ID,
-                client_secret: process.env.META_APP_SECRET,
-                redirect_uri: redirectUri,
-                code: code
-            });
+    const tokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token`;
 
-        const response = await fetch(tokenUrl);
-        const data = await response.json();
-
-        if (data.error) {
-            console.error("META TOKEN ERROR:", data.error);
-            return res.json({ success: false, error: data.error });
-        }
-
-        return res.json({
-            success: true,
-            accessToken: data.access_token,
-            expiresIn: data.expires_in,
-            raw: data
-        });
-    } catch (err) {
-        console.error("TOKEN EXCHANGE FAILED:", err);
-        return res.json({ success: false, error: err.toString() });
-    }
-});
-
-// ---------------------------------------------------
-// 1) Ad Accounts
-// ---------------------------------------------------
-router.post("/adaccounts", async (req, res) => {
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-
-    const result = await metaGet("me/adaccounts", accessToken, {
-        fields: "id,name,account_status,currency,timezone_name"
+    const response = await axios.get(tokenUrl, {
+      params: {
+        client_id: META_APP_ID,
+        client_secret: META_APP_SECRET,
+        redirect_uri: redirectUri,
+        code
+      },
     });
 
-    res.json(result);
-});
-
-// ---------------------------------------------------
-// 2) Campaigns
-// ---------------------------------------------------
-router.post("/campaigns/:accountId", async (req, res) => {
-    const { accountId } = req.params;
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-
-    const result = await metaGet(`${accountId}/campaigns`, accessToken, {
-        fields: "id,name,status,objective,daily_budget"
+    return res.json({
+      success: true,
+      accessToken: response.data.access_token,
+      expiresIn: response.data.expires_in
     });
+  } catch (error) {
+    console.error("OAuth token exchange failed:", error.response?.data || error.message);
 
-    res.json(result);
-});
-
-// ---------------------------------------------------
-// 2b) Campaign Status Update (ACTIVE/PAUSED)
-// ---------------------------------------------------
-router.post("/campaigns/:campaignId/status", async (req, res) => {
-    const { campaignId } = req.params;
-    const { accessToken, status } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-    if (!status) {
-        return res.json({ success: false, error: "status missing" });
-    }
-
-    const allowed = ["ACTIVE", "PAUSED"];
-    const upper = String(status).toUpperCase();
-    if (!allowed.includes(upper)) {
-        return res.json({
-            success: false,
-            error: "Unsupported status. Allowed: ACTIVE, PAUSED"
-        });
-    }
-
-    const result = await metaPost(campaignId, accessToken, {
-        status: upper
+    return res.status(500).json({
+      success: false,
+      error: "OAuth token exchange failed",
+      details: error.response?.data
     });
-
-    res.json(result);
+  }
 });
 
-// ---------------------------------------------------
-// 3) Campaign Insights (mit flexiblem date_preset)
-// ---------------------------------------------------
-router.post("/insights/:campaignId", async (req, res) => {
-    const { campaignId } = req.params;
-    const { accessToken, datePreset } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-
-    const allowedPresets = ["today", "yesterday", "last_7d", "last_30d"];
-    const preset = allowedPresets.includes(datePreset) ? datePreset : "last_30d";
-
-    const result = await metaGet(`${campaignId}/insights`, accessToken, {
-        fields:
-            "spend,impressions,clicks,ctr,cpm,cpp,actions,website_purchase_roas,date_start,date_stop",
-        date_preset: preset
-    });
-
-    res.json(result);
+// ---------- HEALTH ----------
+router.get("/oauth/debug/env", (req, res) => {
+  res.json({
+    META_APP_ID: META_APP_ID ? "OK" : "MISSING",
+    META_APP_SECRET: META_APP_SECRET ? "SET" : "MISSING",
+  });
 });
 
-// ---------------------------------------------------
-// 4) Ads + Creatives (für Creative Library / P2)
-// ---------------------------------------------------
-router.post("/ads/:accountId", async (req, res) => {
-    const { accountId } = req.params;
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-
-    // Ads-Edge des AdAccounts inkl. Creative & Insights
-    const result = await metaGet(`${accountId}/ads`, accessToken, {
-        fields: [
-            "id",
-            "name",
-            "adset_id",
-            "campaign_id",
-            "status",
-            "creative{id,thumbnail_url,object_type,title,body}",
-            "insights{spend,impressions,clicks,ctr,cpm,website_purchase_roas}"
-        ].join(","),
-    limit: "200",
-        date_preset: "last_30d"
-    });
-
-    res.json(result);
-});
-
-// ---------------------------------------------------
-// 5) User Info
-// ---------------------------------------------------
-router.post("/me", async (req, res) => {
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-        return res.json({ success: false, error: "accessToken missing" });
-    }
-
-    const result = await metaGet("me", accessToken, {
-        fields: "id,name"
-    });
-
-    res.json(result);
-});
-
-module.exports = router;
+export default router;
