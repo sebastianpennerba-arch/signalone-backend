@@ -9,6 +9,8 @@ const cors = require("cors");
 
 // 3) Meta-Routen (CommonJS)
 const metaRoutes = require("./metaRoutes");
+const senseiRoutes = require("./senseiRoutes");
+app.use("/api/sensei", senseiRoutes);
 
 // 4) Express App
 const app = express();
@@ -36,8 +38,12 @@ app.get("/", (req, res) => {
 });
 
 // 7) API-Routen
-// Alle Meta-Endpunkte hängen unter /api/meta/*
 app.use("/api/meta", metaRoutes);
+
+// NEW: Sensei AI Module
+const senseiRoutes = require("./senseiRoutes");
+app.use("/api/sensei", senseiRoutes);
+
 
 // 8) Serverstart
 const PORT = process.env.PORT || 3000;
