@@ -6,13 +6,13 @@ const cors = require("cors");
 
 // Import metaRoutes (CommonJS)
 const metaRoutes = require("./metaRoutes");
-
+const senseiRoutes = require("./senseiRoutes");
 const app = express();
 
 // =======================
 // Middleware
 // =======================
-
+app.use("/api/sensei", senseiRoutes);
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST"],
