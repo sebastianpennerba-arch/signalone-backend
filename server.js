@@ -1,34 +1,47 @@
-// server.js (CommonJS)
+// server.js – SignalOne Meta Backend (stabile Version ohne Sensei)
 
+// 1) Environment Variablen laden (.env auf Render)
+require("dotenv").config();
+
+// 2) Dependencies
 const express = require("express");
 const cors = require("cors");
 
+// 3) Meta-Routen (CommonJS)
 const metaRoutes = require("./metaRoutes");
-const senseiRoutes = require("./senseiRoutes");
 
+// 4) Express App
 const app = express();
 
-// ---------- MIDDLEWARE ----------
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
-}));
+// 5) Middleware
+app.use(
+    cors({
+        origin: "*", // später einschränken auf dein Frontend
+        methods: ["GET", "POST"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+    })
+);
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 
-// ---------- ROUTES ----------
-app.use("/api/meta", metaRoutes);
-app.use("/api/sensei", senseiRoutes);
-
-// ---------- ROOT ----------
+// 6) Health Check
 app.get("/", (req, res) => {
-  res.send("SignalOne Backend running ✔");
+    res.json({
+        status: "ok",
+        service: "SignalOne Meta Backend",
+        version: "3.0.0",
+        message: "Backend läuft und akzeptiert alle Live Meta Routes.",
+        timestamp: new Date().toISOString(),
+    });
 });
 
-// ---------- SERVER ----------
+// 7) API-Routen
+// Alle Meta-Endpunkte hängen unter /api/meta/*
+app.use("/api/meta", metaRoutes);
+
+// 8) Serverstart
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
+    console.log(`🚀 SignalOne Backend gestartet auf Port ${PORT}`);
 });
