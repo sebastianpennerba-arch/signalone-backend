@@ -1,14 +1,14 @@
-// metaRoutes.js
-import express from "express";
-import axios from "axios";
+// metaRoutes.js (CommonJS)
+
+const express = require("express");
+const axios = require("axios");
 
 const router = express.Router();
 
-// Load env variables
 const META_APP_ID = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
 
-// ---------- TOKEN EXCHANGE ----------
+// ---------------- TOKEN EXCHANGE ----------------
 router.post("/oauth/token", async (req, res) => {
   try {
     const { code, redirectUri } = req.body;
@@ -28,31 +28,32 @@ router.post("/oauth/token", async (req, res) => {
         client_secret: META_APP_SECRET,
         redirect_uri: redirectUri,
         code
-      },
+      }
     });
 
-    return res.json({
+    res.json({
       success: true,
       accessToken: response.data.access_token,
       expiresIn: response.data.expires_in
     });
-  } catch (error) {
-    console.error("OAuth token exchange failed:", error.response?.data || error.message);
 
-    return res.status(500).json({
+  } catch (err) {
+    console.error("Token exchange failed:", err.response?.data || err.message);
+
+    res.status(500).json({
       success: false,
       error: "OAuth token exchange failed",
-      details: error.response?.data
+      details: err.response?.data
     });
   }
 });
 
-// ---------- HEALTH ----------
+// ---------------- DEBUG ----------------
 router.get("/oauth/debug/env", (req, res) => {
   res.json({
     META_APP_ID: META_APP_ID ? "OK" : "MISSING",
-    META_APP_SECRET: META_APP_SECRET ? "SET" : "MISSING",
+    META_APP_SECRET: META_APP_SECRET ? "SET" : "MISSING"
   });
 });
 
-export default router;
+module.exports = router;
