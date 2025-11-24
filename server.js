@@ -1,8 +1,10 @@
-// server.js
-import express from "express";
-import cors from "cors";
-import metaRoutes from "./metaRoutes.js";
-import senseiRoutes from "./senseiRoutes.js";
+// server.js (CommonJS)
+
+const express = require("express");
+const cors = require("cors");
+
+const metaRoutes = require("./metaRoutes");
+const senseiRoutes = require("./senseiRoutes");
 
 const app = express();
 
@@ -10,7 +12,7 @@ const app = express();
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"],
+  allowedHeaders: ["Content-Type"]
 }));
 
 app.use(express.json({ limit: "10mb" }));
@@ -26,6 +28,7 @@ app.get("/", (req, res) => {
 
 // ---------- SERVER ----------
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`SignalOne Backend running on port ${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
 });
