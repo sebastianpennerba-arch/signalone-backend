@@ -1,27 +1,20 @@
-// senseiRoutes.js
-import express from "express";
-import { analyzeCreativePerformance, analyzeOffer, analyzeHooks } from "./sensei-api.js";
+// senseiRoutes.js (CommonJS)
+
+const express = require("express");
+const {
+  analyzeCreativePerformance,
+  analyzeOffer,
+  analyzeHooks
+} = require("./sensei-api");
 
 const router = express.Router();
 
-/**
- * HEALTH CHECK
- * Wird vom Frontend genutzt, um schnell festzustellen,
- * ob der Sensei-Service überhaupt erreichbar ist.
- */
+// HEALTH CHECK
 router.get("/health", (req, res) => {
   res.json({ ok: true, status: "sensei-module-active" });
 });
 
-/**
- * MAIN ANALYSIS ENDPOINT
- * Das Frontend sendet:
- * {
- *   creatives: [...],
- *   campaigns: [...],
- *   settings: {...}
- * }
- */
+// MAIN ANALYSIS ENDPOINT
 router.post("/analyze", async (req, res) => {
   try {
     const { creatives, campaigns, settings } = req.body;
@@ -33,12 +26,11 @@ router.post("/analyze", async (req, res) => {
       });
     }
 
-    // Sensei Core Analysis (Regelbasiert + Light KI)
     const performance = analyzeCreativePerformance(creatives);
     const offer = analyzeOffer(campaigns || []);
     const hook = analyzeHooks(creatives);
 
-    return res.json({
+    res.json({
       success: true,
       performance,
       offer,
@@ -51,8 +43,8 @@ router.post("/analyze", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Sensei analyze error:", err);
-    return res.status(500).json({
+    console.error("Sensei error:", err);
+    res.status(500).json({
       success: false,
       error: "Sensei processing failed",
       details: err.message
@@ -60,4 +52,4 @@ router.post("/analyze", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
