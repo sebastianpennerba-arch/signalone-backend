@@ -1,18 +1,17 @@
-require("dotenv").config();
+// server.js – SignalOne Backend (Render)
 
 const express = require("express");
 const cors = require("cors");
-
-// Case-sensitiver FIX
-const metaRoutes = require("./metaRoutes.js");
-const senseiRoutes = require("./senseiRoutes.js");
+const metaRoutes = require("./metaRoutes");
+const senseiRoutes = require("./senseiRoutes");
 
 const app = express();
 
+// --- Middleware ---
 app.use(cors());
 app.use(express.json());
 
-// HEALTHCHECK
+// --- Healthcheck Root ---
 app.get("/", (req, res) => {
   res.json({
     ok: true,
@@ -21,12 +20,21 @@ app.get("/", (req, res) => {
   });
 });
 
-// ROUTES
+// --- API Routen ---
 app.use("/api/meta", metaRoutes);
 app.use("/api/sensei", senseiRoutes);
 
-// SERVER
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Backend läuft auf Port ${PORT}`);
+// --- Fallback 404 für unbekannte Routen ---
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: "Not Found",
+    path: req.originalUrl,
+  });
+});
+
+// --- Start ---
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`SignalOne Backend läuft auf Port ${port}`);
 });
