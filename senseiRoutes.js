@@ -1,28 +1,25 @@
-// senseiRoutes.js (CommonJS)
-
 const express = require("express");
 const {
   analyzeCreativePerformance,
   analyzeOffer,
-  analyzeHooks
-} = require("./sensei-api");
+  analyzeHooks,
+} = require("./sensei-api.js");
 
 const router = express.Router();
 
-// HEALTH CHECK
 router.get("/health", (req, res) => {
-  res.json({ ok: true, status: "sensei-module-active" });
+  res.json({ ok: true, status: "sensei-active" });
 });
 
-// MAIN ANALYSIS ENDPOINT
+// MAIN SENSEI API
 router.post("/analyze", async (req, res) => {
   try {
-    const { creatives, campaigns, settings } = req.body;
+    const { creatives, campaigns } = req.body;
 
-    if (!creatives || !Array.isArray(creatives)) {
+    if (!Array.isArray(creatives)) {
       return res.status(400).json({
         success: false,
-        error: "Missing or invalid creatives array"
+        error: "Invalid creatives array",
       });
     }
 
@@ -37,17 +34,16 @@ router.post("/analyze", async (req, res) => {
       hook,
       recommendations: [
         ...performance.recommendations,
+        ...offer.recommendations,
         ...hook.recommendations,
-        ...offer.recommendations
-      ]
+      ],
     });
-
   } catch (err) {
     console.error("Sensei error:", err);
     res.status(500).json({
       success: false,
-      error: "Sensei processing failed",
-      details: err.message
+      error: "Sensei failed",
+      details: err.message,
     });
   }
 });
