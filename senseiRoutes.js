@@ -1,25 +1,30 @@
+// senseiRoutes.js (CommonJS)
+
 const express = require("express");
+
+// FIXED PATH -> richtige Ordnerstruktur
 const {
   analyzeCreativePerformance,
   analyzeOffer,
-  analyzeHooks,
-} = require("./sensei-api.js");
+  analyzeHooks
+} = require("./api/sensei/analyze/sensei-api.js");
 
 const router = express.Router();
 
+// HEALTH CHECK
 router.get("/health", (req, res) => {
-  res.json({ ok: true, status: "sensei-active" });
+  res.json({ ok: true, status: "sensei-module-active" });
 });
 
-// MAIN SENSEI API
+// MAIN ANALYSIS ENDPOINT
 router.post("/analyze", async (req, res) => {
   try {
     const { creatives, campaigns } = req.body;
 
-    if (!Array.isArray(creatives)) {
+    if (!creatives || !Array.isArray(creatives)) {
       return res.status(400).json({
         success: false,
-        error: "Invalid creatives array",
+        error: "Missing or invalid creatives array"
       });
     }
 
@@ -34,16 +39,17 @@ router.post("/analyze", async (req, res) => {
       hook,
       recommendations: [
         ...performance.recommendations,
-        ...offer.recommendations,
         ...hook.recommendations,
-      ],
+        ...offer.recommendations
+      ]
     });
+
   } catch (err) {
     console.error("Sensei error:", err);
     res.status(500).json({
       success: false,
-      error: "Sensei failed",
-      details: err.message,
+      error: "Sensei processing failed",
+      details: err.message
     });
   }
 });
