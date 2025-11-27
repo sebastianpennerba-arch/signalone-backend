@@ -1,36 +1,29 @@
-// sensei-api.js (CommonJS)
+// simple placeholder logic – no crash risk
 
 function analyzeCreativePerformance(creatives) {
   return {
-    summary: "Demo creative performance OK",
+    score: 70,
     recommendations: [
-      "Erhöhe Budget für Top 10% Creatives",
-      "Stoppe Creatives mit ROAS < 1.0"
-    ]
+      { msg: "Add more hooks", priority: "medium" },
+      { msg: "Optimize CPC", priority: "high" },
+    ],
   };
 }
 
 function analyzeOffer(campaigns) {
   return {
-    summary: "Offer strength stable",
-    recommendations: [
-      "Test new offer variation for retargeting"
-    ]
+    recommendations: [{ msg: "Your offer is fine.", priority: "low" }],
   };
 }
 
 function analyzeHooks(creatives) {
   return {
-    summary: "Hooks have above-average CTR",
-    recommendations: [
-      "Generate new hook variations",
-      "Test 3 faster openings for video creatives"
-    ]
+    recommendations: [{ msg: "Try more variations.", priority: "medium" }],
   };
 }
 
 module.exports = {
   analyzeCreativePerformance,
   analyzeOffer,
-  analyzeHooks
+  analyzeHooks,
 };
