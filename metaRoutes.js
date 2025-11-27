@@ -1,56 +1,40 @@
+// server.js – SignalOne Backend (Render)
+
 const express = require("express");
-const axios = require("axios");
+const cors = require("cors");
+const metaRoutes = require("./metaRoutes");
+const senseiRoutes = require("./senseiRoutes");
 
-const router = express.Router();
+const app = express();
 
-const META_APP_ID = process.env.META_APP_ID;
-const META_APP_SECRET = process.env.META_APP_SECRET;
+// --- Middleware ---
+app.use(cors());
+app.use(express.json());
 
-// TOKEN EXCHANGE
-router.post("/oauth/token", async (req, res) => {
-  try {
-    const { code, redirectUri } = req.body;
-
-    if (!code || !redirectUri) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing code or redirectUri",
-      });
-    }
-
-    const response = await axios.get(
-      "https://graph.facebook.com/v21.0/oauth/access_token",
-      {
-        params: {
-          client_id: META_APP_ID,
-          client_secret: META_APP_SECRET,
-          redirect_uri: redirectUri,
-          code,
-        },
-      }
-    );
-
-    res.json({
-      success: true,
-      accessToken: response.data.access_token,
-      expiresIn: response.data.expires_in,
-    });
-  } catch (err) {
-    console.error("Token exchange failed:", err?.response?.data || err);
-    res.status(500).json({
-      success: false,
-      error: "OAuth token exchange failed",
-      details: err?.response?.data || null,
-    });
-  }
-});
-
-// DEBUG
-router.get("/oauth/debug/env", (req, res) => {
+// --- Healthcheck Root ---
+app.get("/", (req, res) => {
   res.json({
-    META_APP_ID: META_APP_ID ? "OK" : "MISSING",
-    META_APP_SECRET: META_APP_SECRET ? "SET" : "MISSING",
+    ok: true,
+    service: "SignalOne Backend",
+    timestamp: new Date().toISOString(),
   });
 });
 
-module.exports = router;
+// --- API Routen ---
+app.use("/api/meta", metaRoutes);
+app.use("/api/sensei", senseiRoutes);
+
+// --- Fallback 404 für unbekannte Routen ---
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: "Not Found",
+    path: req.originalUrl,
+  });
+});
+
+// --- Start ---
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`SignalOne Backend läuft auf Port ${port}`);
+});
