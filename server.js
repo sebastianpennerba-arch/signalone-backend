@@ -5,9 +5,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
-// 3) Routen einbinden
-const metaRoutes = require("./metaRoutes");
-const senseiRoutes = require("./senseiRoutes");
+// 3) Routen einbinden (Linux Case-Sensitive FIX)
+const metaRoutes = require("./metaRoutes.js");
+const senseiRoutes = require("./senseiRoutes.js");
 
 // 4) Express App
 const app = express();
