@@ -149,7 +149,7 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ------------------------
-// 4) Insights by Campaign
+// 4) Insights by Campaign (FIXED)
 // ------------------------
 router.post("/insights/:campaignId", async (req, res) => {
   try {
@@ -157,18 +157,37 @@ router.post("/insights/:campaignId", async (req, res) => {
     const { campaignId } = req.params;
 
     if (!ensureAccessToken(accessToken, res)) return;
-
     if (!campaignId) {
       return res.status(400).json({ ok: false, error: "Missing campaignId" });
     }
 
-    let timeRange = null;
-    const now = Math.floor(Date.now() / 1000);
+    // ---- FIX: Meta braucht ISO-Daten, nicht UNIX ----
+    const now = new Date();
+    const today = new Date(now.toISOString().split("T")[0]);
+
+    let since, until;
 
     switch (timeRangePreset) {
-      case "today": timeRange = { since: now - 86400, until: now }; break;
-      case "yesterday": timeRange = { since: now - 172800, until: now - 86400 }; break;
-      default: timeRange = { since: now - 2592000, until: now }; // last_30d
+      case "today":
+        since = today;
+        until = now;
+        break;
+
+      case "yesterday":
+        since = new Date(today.getTime() - 86400000);
+        until = today;
+        break;
+
+      case "last_7d":
+        since = new Date(today.getTime() - 7 * 86400000);
+        until = now;
+        break;
+
+      case "last_30d":
+      default:
+        since = new Date(today.getTime() - 30 * 86400000);
+        until = now;
+        break;
     }
 
     const url = `https://graph.facebook.com/v21.0/${campaignId}/insights`;
@@ -176,15 +195,19 @@ router.post("/insights/:campaignId", async (req, res) => {
     const response = await axios.get(url, {
       headers: metaHeaders(accessToken),
       params: {
-        fields: "impressions,clicks,spend,actions,action_values,cpc,ctr,cpm,purchase_roas",
-        time_range: timeRange,
+        fields:
+          "impressions,clicks,spend,ctr,cpm,website_purchase_roas,actions,action_values",
+        time_range: {
+          since: since.toISOString().split("T")[0],
+          until: until.toISOString().split("T")[0]
+        },
         limit: 500
       }
     });
 
     res.json({ ok: true, data: response.data });
   } catch (err) {
-    console.error("Error in /api/meta/insights:", err?.response?.data || err.message);
+    console.error("Insights ERROR:", err?.response?.data || err);
     res.status(500).json({
       ok: false,
       error: "Failed to fetch insights",
