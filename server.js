@@ -2,8 +2,13 @@
 
 const express = require("express");
 const cors = require("cors");
+const dotenv = require("dotenv");
+
 const metaRoutes = require("./metaRoutes");
 const senseiRoutes = require("./senseiRoutes");
+
+// Env laden
+dotenv.config();
 
 const app = express();
 
@@ -16,11 +21,14 @@ app.get("/", (req, res) => {
   res.json({
     ok: true,
     service: "SignalOne Backend",
-    timestamp: new Date().toISOString(),
+    meta: {
+      metaRoutes: "/api/meta/*",
+      senseiRoutes: "/api/sensei/*"
+    }
   });
 });
 
-// --- API Routen ---
+// --- Mount Routes ---
 app.use("/api/meta", metaRoutes);
 app.use("/api/sensei", senseiRoutes);
 
@@ -29,7 +37,7 @@ app.use((req, res) => {
   res.status(404).json({
     ok: false,
     error: "Not Found",
-    path: req.originalUrl,
+    path: req.originalUrl
   });
 });
 
