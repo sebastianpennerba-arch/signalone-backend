@@ -1,13 +1,11 @@
-// sensei-api.js
+// api/sensei/analyze/sensei-api.js
 // -----------------------------------------------------------------------------
 // 🧠 Sensei AI Engine – Creative, Offer & Hook Analysis
-// Backend-seitige "echte" Algorithmen ohne Platzhalter.
-// - Keine externen Dependencies
-// - Robust gegen unvollständige Daten
-// - Gibt strukturierte Empfehlungen für das Sensei-Frontend zurück
+// Echte Logik, keine Platzhalter. Läuft komplett ohne externe KI-Services.
+// Nutzt nur numerische Heuristiken + Z-Scores.
 // -----------------------------------------------------------------------------
 
-// ---------- Helpers -----------------------------------------------------------
+// ---------- Helper -----------------------------------------------------------
 
 function toNumber(value, fallback = 0) {
   if (value == null) return fallback;
@@ -15,15 +13,15 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function safeDivide(num, den, fallback = 0) {
   const n = toNumber(num, 0);
   const d = toNumber(den, 0);
   if (!d) return fallback;
   return n / d;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function percentChange(current, previous) {
@@ -34,11 +32,17 @@ function percentChange(current, previous) {
 }
 
 function computeMeanStd(values) {
-  const clean = values.map((v) => toNumber(v, 0)).filter((v) => Number.isFinite(v));
+  const clean = values
+    .map((v) => toNumber(v, 0))
+    .filter((v) => Number.isFinite(v));
+
   if (!clean.length) return { mean: 0, std: 0 };
+
   const mean = clean.reduce((a, b) => a + b, 0) / clean.length;
   const variance =
-    clean.reduce((sum, v) => sum + (v - mean) ** 2, 0) / Math.max(clean.length - 1, 1);
+    clean.reduce((sum, v) => sum + (v - mean) ** 2, 0) /
+    Math.max(clean.length - 1, 1);
+
   return { mean, std: Math.sqrt(variance) };
 }
 
@@ -49,54 +53,48 @@ function zScore(value, mean, std) {
 
 // ---------- Canonical Metric Extraction --------------------------------------
 
-// Wir versuchen, möglichst viele Formen von Daten abzudecken
-// (Demo-Daten, Meta-Insights, eigene Normalisierung …)
+// Flexible Mapping für Demo- und Live-Daten (Meta-Insights etc.)
 
-function extractCreativeMetrics(creative = {}) {
-  const m = creative.metrics || creative.metric || {};
+function extractMetrics(entity) {
+  const m = entity.metrics || entity.metric || entity.insights || {};
 
-  // Spend
   const spend =
     toNumber(m.spend) ||
     toNumber(m.spend_eur) ||
-    toNumber(creative.spend) ||
+    toNumber(entity.spend) ||
     0;
 
-  // Revenue
   let revenue =
     toNumber(m.revenue) ||
     toNumber(m.purchase_value) ||
     toNumber(m.value) ||
-    toNumber(creative.revenue);
+    toNumber(entity.revenue) ||
+    0;
 
-  // ROAS – falls nicht direkt vorhanden, aus revenue / spend
   let roas =
     toNumber(m.roas) ||
     toNumber(m.return_on_ad_spend) ||
-    toNumber(m.website_purchase_roas) ||
     0;
+
+  // Meta: website_purchase_roas oft als Array von {value}
+  if (!roas && Array.isArray(m.website_purchase_roas) && m.website_purchase_roas[0]) {
+    roas = toNumber(m.website_purchase_roas[0].value);
+  }
 
   if (!roas && spend && revenue) {
     roas = revenue / spend;
   }
 
-  // Meta "website_purchase_roas" als Array
-  if (!roas && Array.isArray(m.website_purchase_roas) && m.website_purchase_roas[0]) {
-    roas = toNumber(m.website_purchase_roas[0].value);
-  }
+  const impressions = toNumber(m.impressions) || 0;
+  const clicks = toNumber(m.clicks) || 0;
 
-  // CTR / CPM
   const ctr =
     toNumber(m.ctr) ||
-    safeDivide(m.clicks, m.impressions, 0) * 100 ||
-    0;
+    (impressions ? (clicks / impressions) * 100 : 0);
 
   const cpm =
     toNumber(m.cpm) ||
-    (spend && m.impressions ? (spend / toNumber(m.impressions)) * 1000 : 0);
-
-  const impressions = toNumber(m.impressions) || 0;
-  const clicks = toNumber(m.clicks) || 0;
+    (impressions ? (spend / impressions) * 1000 : 0);
 
   const purchases =
     toNumber(m.purchases) ||
@@ -111,7 +109,14 @@ function extractCreativeMetrics(creative = {}) {
     toNumber(m.roas_prev_7d) ||
     0;
 
-  const ctrPrev = toNumber(m.ctr_prev) || 0;
+  const ctrPrev =
+    toNumber(m.ctr_prev) ||
+    toNumber(m.ctr_prev_7d) ||
+    0;
+
+  if (!revenue && roas && spend) {
+    revenue = roas * spend;
+  }
 
   return {
     spend,
@@ -129,32 +134,31 @@ function extractCreativeMetrics(creative = {}) {
 }
 
 function normalizeHookLabel(rawHook = "", name = "") {
-  const source = `${rawHook || ""} ${name || ""}`.toLowerCase();
+  const src = `${rawHook || ""} ${name || ""}`.toLowerCase();
 
-  if (!source.trim()) return "unknown";
+  if (!src.trim()) return "unknown";
 
-  if (source.includes("problem") || source.includes("solution") || source.includes("pas")) {
+  if (src.includes("problem") || src.includes("solution")) {
     return "Problem/Solution";
   }
-  if (source.includes("testimonial") || source.includes("review")) {
+  if (src.includes("testimonial") || src.includes("review")) {
     return "Testimonial";
   }
-  if (source.includes("before") && source.includes("after")) {
+  if (src.includes("before") && src.includes("after")) {
     return "Before/After";
   }
-  if (source.includes("ugc")) {
+  if (src.includes("ugc")) {
     return "UGC";
   }
-  if (source.includes("static") || source.includes("image")) {
+  if (src.includes("static") || src.includes("image")) {
     return "Static";
   }
-  if (source.includes("direct") && source.includes("cta")) {
+  if (src.includes("direct") && src.includes("cta")) {
     return "Direct CTA";
   }
 
-  // fallback: erstes Token aus Hook oder Name
   const tokens = (rawHook || name || "")
-    .split(/[_\-|/]+/g)
+    .split(/[_\-\|\s/]+/g)
     .map((t) => t.trim())
     .filter(Boolean);
 
@@ -163,9 +167,9 @@ function normalizeHookLabel(rawHook = "", name = "") {
 
 // ---------- Creative Aggregation & Scoring -----------------------------------
 
-function summarizeCreatives(creatives = []) {
-  const canonical = creatives.map((c) => {
-    const metrics = extractCreativeMetrics(c);
+function summarizeCreatives(creatives) {
+  const canonical = (creatives || []).map((c) => {
+    const metrics = extractMetrics(c);
     const hookLabel = normalizeHookLabel(c.hook, c.name);
     const creator = c.creator || c.creator_name || c.author || null;
 
@@ -182,9 +186,6 @@ function summarizeCreatives(creatives = []) {
 
   let totalSpend = 0;
   let totalRevenue = 0;
-  let weightedRoasSum = 0;
-  let weightedCtrSum = 0;
-  let weightedCpmSum = 0;
 
   const roasValues = [];
   const ctrValues = [];
@@ -196,26 +197,20 @@ function summarizeCreatives(creatives = []) {
     totalSpend += spend;
     totalRevenue += revenue;
 
-    if (spend > 0) {
-      weightedRoasSum += roas * spend;
-      weightedCtrSum += ctr * spend;
-      weightedCpmSum += cpm * spend;
-    }
-
     roasValues.push(roas);
     ctrValues.push(ctr);
     cpmValues.push(cpm);
     spendValues.push(spend);
   });
 
-  const avgRoas = totalSpend ? weightedRoasSum / totalSpend : 0;
-  const avgCtr = totalSpend ? weightedCtrSum / totalSpend : 0;
-  const avgCpm = totalSpend ? weightedCpmSum / totalSpend : 0;
-
   const roasStats = computeMeanStd(roasValues);
   const ctrStats = computeMeanStd(ctrValues);
   const cpmStats = computeMeanStd(cpmValues);
   const spendStats = computeMeanStd(spendValues);
+
+  const avgRoas = roasStats.mean;
+  const avgCtr = ctrStats.mean;
+  const avgCpm = cpmStats.mean;
 
   return {
     canonical,
@@ -235,8 +230,17 @@ function summarizeCreatives(creatives = []) {
 }
 
 function scoreCreative(entry, aggregates) {
-  const { metrics, hookLabel, status } = entry;
-  const { roas, ctr, cpm, spend, purchases, roasPrev, ctrPrev } = metrics;
+  const { metrics, status } = entry;
+  const {
+    roas,
+    roasPrev,
+    ctr,
+    ctrPrev,
+    cpm,
+    spend,
+    purchases
+  } = metrics;
+
   const {
     avgRoas,
     avgCtr,
@@ -244,22 +248,23 @@ function scoreCreative(entry, aggregates) {
     roasStats,
     ctrStats,
     cpmStats,
-    spendStats
+    spendStats,
+    totalSpend
   } = aggregates;
 
-  // Z-Scores für relative Leistung
+  // Z-Werte für relative Leistung
   const zRoas = zScore(roas, roasStats.mean, roasStats.std);
   const zCtr = zScore(ctr, ctrStats.mean, ctrStats.std);
-  const zCpm = -zScore(cpm, cpmStats.mean, cpmStats.std); // niedriger CPM ist gut
+  const zCpm = -zScore(cpm, cpmStats.mean, cpmStats.std); // niedriger CPM = besser
   const zSpend = zScore(spend, spendStats.mean, spendStats.std);
 
-  // Momentum
+  // Momentum anhand von ROAS/CTR-Veränderung
   const roasDelta = percentChange(roas, roasPrev);
   const ctrDelta = percentChange(ctr, ctrPrev);
   const momentum =
-    clamp(roasDelta / 20, -2, 2) * 0.6 + clamp(ctrDelta / 20, -2, 2) * 0.4;
+    clamp(roasDelta / 20, -2, 2) * 0.6 +
+    clamp(ctrDelta / 20, -2, 2) * 0.4;
 
-  // Basisscore 50, dann z-Werte + Momentum + Spend-Gewichtung
   let score =
     50 +
     zRoas * 12 +
@@ -268,14 +273,14 @@ function scoreCreative(entry, aggregates) {
     zSpend * 4 +
     momentum * 3;
 
-  // leichte Bonus-/Malus-Logik
-  if (roas > avgRoas * 1.4 && spend > aggregates.totalSpend * 0.03) {
+  // Bonus/Malus
+  if (roas > avgRoas * 1.4 && spend > totalSpend * 0.03) {
     score += 6;
   }
-  if (roas < avgRoas * 0.7 && spend > aggregates.totalSpend * 0.02) {
+  if (roas < avgRoas * 0.7 && spend > totalSpend * 0.02) {
     score -= 8;
   }
-  if (purchases === 0 && spend > aggregates.totalSpend * 0.015) {
+  if (purchases === 0 && spend > totalSpend * 0.015) {
     score -= 10;
   }
 
@@ -287,20 +292,18 @@ function scoreCreative(entry, aggregates) {
   else if (score <= 40) label = "Loser";
   else if (score <= 55) label = "Under Review";
 
-  // Testing: wenig Spend, aktiv
   const isTesting =
-    spend < Math.max(aggregates.spendStats.mean * 0.6, aggregates.totalSpend * 0.01) &&
+    spend < Math.max(spendStats.mean * 0.6, totalSpend * 0.01) &&
     status === "ACTIVE";
 
   if (isTesting && label === "Neutral") {
     label = "Testing";
   }
 
-  // Fatigue: starke ROAS- oder CTR-Einbrüche
   const fatigue =
     roasPrev > 0 &&
     roas < roasPrev * 0.7 &&
-    spend > aggregates.totalSpend * 0.02;
+    spend > totalSpend * 0.02;
 
   const reasoning = [];
 
@@ -364,9 +367,8 @@ function segmentCreatives(scored, aggregates) {
     }
   });
 
-  // Sortierungen
   winners.sort((a, b) => b.score - a.score);
-  losers.sort((a, b) => a.score - b.score); // schlechteste zuerst
+  losers.sort((a, b) => a.score - b.score);
   testing.sort((a, b) => b.metrics.spend - a.metrics.spend);
   potentials.sort((a, b) => b.score - a.score);
 
@@ -378,52 +380,49 @@ function buildCreativeRecommendations(aggregates, segments) {
   const recs = [];
 
   const totalSpend = aggregates.totalSpend || 0;
-  const overallRoas = aggregates.avgRoas || 0;
+  const accountRoas = aggregates.avgRoas || 0;
 
-  // 1) Budget Reallocation
+  // Budget Shift
   if (winners.length && losers.length && totalSpend > 0) {
-    const topWinners = winners.slice(0, 3);
-    const worstLosers = losers.slice(0, 3);
+    const top = winners.slice(0, 3);
+    const worst = losers.slice(0, 3);
 
-    const loserSpend = worstLosers.reduce((sum, c) => sum + c.metrics.spend, 0);
-    const winnerRoasAvg =
-      safeDivide(
-        topWinners.reduce((sum, c) => sum + c.metrics.roas * c.metrics.spend, 0),
-        topWinners.reduce((sum, c) => sum + c.metrics.spend, 0),
-        overallRoas
-      ) || overallRoas;
+    const loserSpend = worst.reduce((sum, c) => sum + c.metrics.spend, 0);
+    const topSpend = top.reduce((sum, c) => sum + c.metrics.spend, 0) || 1;
 
-    const expectedUpliftRoas = winnerRoasAvg - overallRoas;
-    const expectedExtraRevPerDay = loserSpend * expectedUpliftRoas;
+    const weightedWinnerRoas =
+      top.reduce((sum, c) => sum + c.metrics.roas * c.metrics.spend, 0) /
+      topSpend;
+
+    const upliftRoas = Math.max(weightedWinnerRoas - accountRoas, 0);
+    const estExtraRevenue = loserSpend * upliftRoas;
 
     recs.push({
       type: "budget_shift",
       priority: "high",
-      title: "Budget von Losern zu Gewinner-Creatives verschieben",
+      title: "Budget von Losern auf Gewinner-Creatives verschieben",
       message:
-        "Reduziere Budget auf schlecht performenden Creatives und allokiere es auf die Top-Performer.",
+        "Reduziere Budget auf schwache Creatives und schiebe es auf deine Top-Performer.",
       details: {
-        fromCreatives: worstLosers.map((c) => ({
+        fromCreatives: worst.map((c) => ({
           id: c.id,
           name: c.name,
           roas: c.metrics.roas,
           spend: c.metrics.spend
         })),
-        toCreatives: topWinners.map((c) => ({
+        toCreatives: top.map((c) => ({
           id: c.id,
           name: c.name,
           roas: c.metrics.roas,
           spend: c.metrics.spend
         })),
         loserSpend,
-        estimatedDailyRevenueUplift: Math.round(expectedExtraRevPerDay),
-        explanation:
-          "Basierend auf dem ROAS-Unterschied zwischen deinen Top- und Bottom-Creatives."
+        estimatedDailyRevenueUplift: Math.round(estExtraRevenue)
       }
     });
   }
 
-  // 2) Testing Opportunities
+  // Testing Opportunities
   if (testing.length) {
     const topTesting = testing.slice(0, 5).map((c) => ({
       id: c.id,
@@ -435,26 +434,26 @@ function buildCreativeRecommendations(aggregates, segments) {
     recs.push({
       type: "testing",
       priority: "medium",
-      title: "Testing-Creatives gezielt skalieren",
+      title: "Testing-Creatives strukturiert bewerten",
       message:
-        "Mehrere Creatives haben erste gute Signale. Plane strukturierte Tests mit klaren Budgets.",
+        "Einige Creatives haben erste Signale. Gib ihnen ein klares Testbudget und Deadline.",
       details: {
         candidates: topTesting,
         suggestion:
-          "Setze pro Creative ein fixes Testbudget (z.B. 50–150€ / Tag für 3 Tage) und entscheide nach klaren KPIs (ROAS, CPA, CTR)."
+          "Teste diese Creatives 2–3 Tage mit fixem Tagesbudget und entscheide dann anhand ROAS/CPA."
       }
     });
   }
 
-  // 3) Fatigue / Rotation
-  const fatigued = segments.winners.filter((c) => c.fatigue);
+  // Fatigue
+  const fatigued = winners.filter((c) => c.fatigue);
   if (fatigued.length) {
     recs.push({
       type: "fatigue",
       priority: "high",
-      title: "Ad Fatigue erkannt – Varianten nachlegen",
+      title: "Ad Fatigue erkannt – Varianten bauen",
       message:
-        "Einige deiner Gewinner-Creatives verlieren deutlich an Performance. Jetzt Varianten produzieren, bevor die Performance kollabiert.",
+        "Winner-Creatives verlieren an Performance. Ersetze sie bevor der Account einbricht.",
       details: {
         creatives: fatigued.map((c) => ({
           id: c.id,
@@ -464,19 +463,18 @@ function buildCreativeRecommendations(aggregates, segments) {
           spend: c.metrics.spend
         })),
         suggestion:
-          "Erstelle 2–3 neue Varianten mit ähnlicher Story, aber frischen Hooks/Intros. Nutze Creator & Hook, die historisch am besten performen."
+          "Erstelle 2–3 Varianten mit gleichem Angle/Hook, aber neuem Visual, Musik oder Text-Overlay."
       }
     });
   }
 
-  // 4) Safety Net – generelle Empfehlung, falls sonst wenig erkannt
   if (!recs.length) {
     recs.push({
       type: "generic",
       priority: "low",
-      title: "Account ist stabil – weiter beobachten",
+      title: "Account stabil – Fokus auf neue Tests",
       message:
-        "Keine starken Ausreißer erkennbar. Nutze die Testing-Slots trotzdem, um neue Hooks & Creator auszuprobieren.",
+        "Keine starken Ausreißer erkannt. Nutze dein Testing-Budget, um neue Hooks & Creator zu finden.",
       details: {}
     });
   }
@@ -484,7 +482,7 @@ function buildCreativeRecommendations(aggregates, segments) {
   return recs;
 }
 
-// ---------- Public: Creative Performance Analysis ----------------------------
+// ---------- Public: Creative Performance -------------------------------------
 
 function analyzeCreativePerformance(creatives = []) {
   const { canonical, aggregates } = summarizeCreatives(creatives);
@@ -507,7 +505,7 @@ function analyzeCreativePerformance(creatives = []) {
           priority: "low",
           title: "Keine Creatives übergeben",
           message:
-            "Für eine Analyse müssen mindestens ein Creative mit KPIs übergeben werden.",
+            "Für die Analyse müssen mindestens ein Creative inkl. KPIs übergeben werden.",
           details: {}
         }
       ]
@@ -544,13 +542,14 @@ function analyzeOffer(campaigns = []) {
         totalCampaigns: 0,
         avgRoas: 0
       },
+      campaigns: [],
       recommendations: [
         {
           type: "no_data",
           priority: "low",
           title: "Keine Kampagnen übergeben",
           message:
-            "Die Offer-Analyse benötigt mindestens eine Kampagne mit Spend/ROAS.",
+            "Die Offer/Funnel-Analyse benötigt mindestens eine Kampagne mit Spend/ROAS.",
           details: {}
         }
       ]
@@ -558,7 +557,7 @@ function analyzeOffer(campaigns = []) {
   }
 
   const normalized = campaigns.map((c) => {
-    const metrics = extractCreativeMetrics(c); // gleiche Logik reicht hier
+    const metrics = extractMetrics(c);
     return {
       id: c.id || c.campaign_id || String(Math.random()),
       name: c.name || "Unnamed Campaign",
@@ -569,31 +568,37 @@ function analyzeOffer(campaigns = []) {
     };
   });
 
-  const { aggregates } = summarizeCreatives(normalized); // nutzt gleiche Aggregationslogik
+  const { aggregates } = summarizeCreatives(normalized);
   const avgRoas = aggregates.avgRoas || 0;
   const avgCtr = aggregates.avgCtr || 0;
+  const avgCpm = aggregates.avgCpm || 0;
 
-  const withFlags = normalized.map((c) => {
+  const enriched = normalized.map((c) => {
     const { roas, ctr, cpm, spend } = c.metrics;
-    const funnelType =
-      ctr >= avgCtr * 1.1 && roas < avgRoas * 0.8
-        ? "offer_issue"
-        : ctr <= avgCtr * 0.8 && roas < avgRoas * 0.9
-        ? "creative_issue"
-        : cpm > aggregates.avgCpm * 1.2
-        ? "targeting_issue"
-        : "balanced";
+
+    let funnelType = "balanced";
+
+    if (ctr >= avgCtr * 1.1 && roas < avgRoas * 0.8) {
+      funnelType = "offer_issue"; // Viele Klicks, wenig Sales
+    } else if (ctr <= avgCtr * 0.8 && roas < avgRoas * 0.9) {
+      funnelType = "creative_issue"; // Weder Klicks noch Sales
+    } else if (cpm > avgCpm * 1.2) {
+      funnelType = "targeting_issue"; // Traffic zu teuer
+    }
 
     return {
       ...c,
       funnelType,
-      roasDeltaVsAvg: percentChange(roas, avgRoas)
+      roasDeltaVsAvg: percentChange(roas, avgRoas),
+      spendShare: aggregates.totalSpend
+        ? (spend / aggregates.totalSpend) * 100
+        : 0
     };
   });
 
-  const offerProblems = withFlags.filter((c) => c.funnelType === "offer_issue");
-  const creativeProblems = withFlags.filter((c) => c.funnelType === "creative_issue");
-  const targetingProblems = withFlags.filter((c) => c.funnelType === "targeting_issue");
+  const offerProblems = enriched.filter((c) => c.funnelType === "offer_issue");
+  const creativeProblems = enriched.filter((c) => c.funnelType === "creative_issue");
+  const targetingProblems = enriched.filter((c) => c.funnelType === "targeting_issue");
 
   const recs = [];
 
@@ -603,7 +608,7 @@ function analyzeOffer(campaigns = []) {
       priority: "high",
       title: "Starke Klicks, aber schwacher ROAS – Offer / Funnel prüfen",
       message:
-        "Einige Kampagnen haben gute CTR, aber schlechten ROAS. Meist liegt das an Offer, Landingpage oder Checkout.",
+        "Kampagnen mit guter CTR aber schwachem ROAS deuten auf Probleme in Offer, Landingpage oder Checkout hin.",
       details: {
         campaigns: offerProblems.map((c) => ({
           id: c.id,
@@ -613,9 +618,9 @@ function analyzeOffer(campaigns = []) {
           spend: c.metrics.spend
         })),
         checklist: [
-          "Landingpage-Konversion (Add-to-Cart / Purchase Rate) prüfen",
-          "Offer kommunizieren (Preis, Bundle, Scarcity, Social Proof)",
-          "Pixel-Events & Tracking testen",
+          "Landingpage-Konversion (Add-to-Cart / Purchase) prüfen",
+          "Offer-Kommunikation (Preis, Bundles, Scarcity, Social Proof)",
+          "Pixel-Events und Tracking sauber testen",
           "Mobile Page Speed checken"
         ]
       }
@@ -628,7 +633,7 @@ function analyzeOffer(campaigns = []) {
       priority: "medium",
       title: "Kampagnen mit Kreativ-Problem identifiziert",
       message:
-        "Schwache CTR & schwacher ROAS deuten auf uninteressante Creatives oder Hooks hin.",
+        "Schwache CTR & schwacher ROAS deuten auf uninteressante Creatives/Angles hin.",
       details: {
         campaigns: creativeProblems.map((c) => ({
           id: c.id,
@@ -638,7 +643,7 @@ function analyzeOffer(campaigns = []) {
           spend: c.metrics.spend
         })),
         suggestion:
-          "Nutze Sensei Creative Library & Hook-Analyse, um neue Hooks & Formate zu testen (z.B. UGC Testimonial statt statischer Banner)."
+          "Nutze Sensei, um bessere Hooks zu finden (z.B. UGC Problem/Solution statt statischer Banner)."
       }
     });
   }
@@ -647,9 +652,9 @@ function analyzeOffer(campaigns = []) {
     recs.push({
       type: "targeting",
       priority: "medium",
-      title: "Hohe CPM – Targeting / Bidding optimieren",
+      title: "Hohe CPM – Targeting / Placements optimieren",
       message:
-        "Einige Kampagnen kaufen Traffic zu teuren CPMs ein. Prüfe Targeting, Placements & Bidding-Strategie.",
+        "Einige Kampagnen kaufen Reichweite zu hohen CPMs ein. Prüfe Zielgruppen, Placements und Bidding-Strategien.",
       details: {
         campaigns: targetingProblems.map((c) => ({
           id: c.id,
@@ -660,9 +665,9 @@ function analyzeOffer(campaigns = []) {
         })),
         checklist: [
           "Placements testen (z.B. Reels vs. Feed)",
-          "Breitere Audiences ausprobieren",
-          "Frequency & Audience Overlap checken",
-          "Bidding-Strategie (Lowest Cost vs. Cost Cap) testen"
+          "Broad vs. Interessentargeting vergleichen",
+          "Frequency & Audience Overlap prüfen",
+          "Bidding-Strategie testen (Lowest Cost vs. Cost Cap)"
         ]
       }
     });
@@ -674,21 +679,21 @@ function analyzeOffer(campaigns = []) {
       priority: "low",
       title: "Funnel wirkt insgesamt gesund",
       message:
-        "Keine klaren Funnel-Bottlenecks erkannt. Fokus auf Creative-Testing & Skalierung der Gewinner.",
+        "Keine starken Funnel-Bottlenecks erkannt. Fokus auf Creative-Testing & Scaling.",
       details: {}
     });
   }
 
   return {
     summary: {
-      totalCampaigns: normalized.length,
+      totalCampaigns: enriched.length,
       avgRoas,
       avgCtr,
-      avgCpm: aggregates.avgCpm,
+      avgCpm,
       totalSpend: aggregates.totalSpend,
       totalRevenue: aggregates.totalRevenue
     },
-    campaigns: withFlags,
+    campaigns: enriched,
     recommendations: recs
   };
 }
@@ -699,7 +704,8 @@ function analyzeHooks(creatives = []) {
   if (!Array.isArray(creatives) || !creatives.length) {
     return {
       summary: {
-        hookCount: 0
+        hookCount: 0,
+        totalCreatives: 0
       },
       hooks: [],
       recommendations: [
@@ -720,7 +726,7 @@ function analyzeHooks(creatives = []) {
 
   canonical.forEach((c) => {
     const label = normalizeHookLabel(c.raw.hook, c.name);
-    const metrics = extractCreativeMetrics(c.raw);
+    const metrics = extractMetrics(c.raw);
 
     if (!hookMap.has(label)) {
       hookMap.set(label, {
@@ -728,9 +734,7 @@ function analyzeHooks(creatives = []) {
         creatives: [],
         totalSpend: 0,
         totalRevenue: 0,
-        weightedRoasSum: 0,
-        totalImpressions: 0,
-        totalPurchases: 0
+        weightedRoasSum: 0
       });
     }
 
@@ -743,13 +747,12 @@ function analyzeHooks(creatives = []) {
     bucket.totalSpend += metrics.spend;
     bucket.totalRevenue += metrics.revenue;
     bucket.weightedRoasSum += metrics.roas * metrics.spend;
-    bucket.totalImpressions += metrics.impressions;
-    bucket.totalPurchases += metrics.purchases;
   });
 
   const hooks = Array.from(hookMap.values()).map((h) => {
-    const avgRoas = h.totalSpend ? h.weightedRoasSum / h.totalSpend : 0;
-    const ctr = safeDivide(h.totalPurchases, h.totalImpressions, 0) * 100; // grober Proxy
+    const avgRoas = h.totalSpend
+      ? h.weightedRoasSum / h.totalSpend
+      : 0;
 
     return {
       label: h.label,
@@ -757,7 +760,6 @@ function analyzeHooks(creatives = []) {
       totalSpend: h.totalSpend,
       totalRevenue: h.totalRevenue,
       avgRoas,
-      proxyConversionRate: ctr,
       shareOfSpend: aggregates.totalSpend
         ? (h.totalSpend / aggregates.totalSpend) * 100
         : 0
@@ -777,36 +779,32 @@ function analyzeHooks(creatives = []) {
       priority: "high",
       title: "Top-Hooks identifiziert",
       message:
-        "Diese Hook-Formate schlagen deinen Account-Durchschnitt deutlich. Produziere bewusst mehr davon.",
+        "Diese Hook-Formate schlagen deinen Account-Durchschnitt deutlich. Produziere mehr Creatives in diesem Stil.",
       details: {
         hooks: top.map((h) => ({
           label: h.label,
           avgRoas: h.avgRoas,
           shareOfSpend: h.shareOfSpend,
           totalSpend: h.totalSpend
-        })),
-        suggestion:
-          "Richte deine Creative-Produktion so aus, dass 70–80 % der neuen Creatives auf den Top-Hook-Formaten basieren."
+        }))
       }
     });
   }
 
-  if (bottom.length && hooks.length > 2) {
+  if (bottom.length && hooks.length > 3) {
     recs.push({
       type: "hook_losers",
       priority: "medium",
       title: "Schwache Hook-Formate reduzieren",
       message:
-        "Einige Hook-Cluster liegen deutlich unter dem Account-ROAS. Hier solltest du spend reduzieren oder komplett pausieren.",
+        "Einige Hook-Cluster liegen klar unter dem Account-ROAS. Hier solltest du Budget reduzieren oder pausieren.",
       details: {
         hooks: bottom.map((h) => ({
           label: h.label,
           avgRoas: h.avgRoas,
           shareOfSpend: h.shareOfSpend,
           totalSpend: h.totalSpend
-        })),
-        suggestion:
-          "Pausiere schwache Hook-Formate schrittweise und verschiebe Budget auf deine Gewinner-Hooks."
+        }))
       }
     });
   }
@@ -815,9 +813,9 @@ function analyzeHooks(creatives = []) {
     recs.push({
       type: "hook_balanced",
       priority: "low",
-      title: "Hook-Performance ohne starke Ausreißer",
+      title: "Hook-Performance stabil",
       message:
-        "Die Hook-Cluster liegen relativ nahe beieinander. Nutze kreative Experimente (z.B. neue Storylines, Creator) um neue Gewinner zu finden.",
+        "Die Hook-Cluster liegen relativ nah beieinander. Nutze kreative Experimente, um neue Gewinner zu finden.",
       details: {}
     });
   }
