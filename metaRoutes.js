@@ -1,4 +1,4 @@
-// metaRoutes.js – Meta OAuth + Proxy Routen (FINAL VERSION)
+// metaRoutes.js – Meta OAuth + Proxy Routen
 
 const express = require("express");
 const axios = require("axios");
@@ -7,7 +7,9 @@ const router = express.Router();
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
-const DEFAULT_REDIRECT_URI = process.env.META_OAUTH_REDIRECT_URI;
+const DEFAULT_REDIRECT_URI = process.env.META_OAUTH_REDIRECT_URI || "";
+
+// --- Helper ------------------------------------------------------------------
 
 function ensureAccessToken(token, res) {
   if (!token) {
@@ -19,7 +21,7 @@ function ensureAccessToken(token, res) {
 
 function normalizeAccountId(id) {
   if (!id) return null;
-  return id.startsWith("act_") ? id : `act_${id}`;
+  return String(id).startsWith("act_") ? String(id) : `act_${id}`;
 }
 
 function metaHeaders(accessToken) {
@@ -29,12 +31,17 @@ function metaHeaders(accessToken) {
 // ------------------------
 // 1) OAuth Code → Token
 // ------------------------
+// POST /api/meta/oauth/token
+// Body: { code, redirectUri? }
+// Antwort: { ok, success, accessToken, tokenType, expiresIn, raw }
 router.post("/oauth/token", async (req, res) => {
   try {
     const { code, redirectUri } = req.body || {};
 
     if (!code) {
-      return res.status(400).json({ ok: false, error: "Missing 'code' in request body" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing 'code' in request body" });
     }
 
     if (!META_APP_ID || !META_APP_SECRET) {
@@ -48,7 +55,8 @@ router.post("/oauth/token", async (req, res) => {
     if (!finalRedirectUri) {
       return res.status(500).json({
         ok: false,
-        error: "No redirectUri provided and META_OAUTH_REDIRECT_URI not set"
+        error:
+          "No redirectUri provided and META_OAUTH_REDIRECT_URI not set on server"
       });
     }
 
@@ -74,18 +82,51 @@ router.post("/oauth/token", async (req, res) => {
       raw: data
     });
   } catch (err) {
-    console.error("Error in /api/meta/oauth/token:", err?.response?.data || err.message);
+    console.error("Error in /api/meta/oauth/token:", err?.response?.data || err);
     return res.status(500).json({
       ok: false,
-      error: "Failed to exchange code for access token",
+      success: false,
+      error: "Meta token exchange failed",
       details: err?.response?.data || err.message
     });
   }
 });
 
 // ------------------------
-// 2) Ad Accounts
+// 2) User Profil
 // ------------------------
+// POST /api/meta/me
+// Body: { accessToken }
+router.post("/me", async (req, res) => {
+  try {
+    const { accessToken } = req.body || {};
+    if (!ensureAccessToken(accessToken, res)) return;
+
+    const url = "https://graph.facebook.com/v21.0/me";
+
+    const response = await axios.get(url, {
+      headers: metaHeaders(accessToken),
+      params: {
+        fields: "id,name,email"
+      }
+    });
+
+    res.json({ ok: true, data: response.data });
+  } catch (err) {
+    console.error("Error in /api/meta/me:", err?.response?.data || err);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to fetch user profile",
+      details: err?.response?.data || err.message
+    });
+  }
+});
+
+// ------------------------
+// 3) Ad Accounts
+// ------------------------
+// POST /api/meta/adaccounts
+// Body: { accessToken }
 router.post("/adaccounts", async (req, res) => {
   try {
     const { accessToken } = req.body || {};
@@ -103,7 +144,7 @@ router.post("/adaccounts", async (req, res) => {
 
     res.json({ ok: true, data: response.data });
   } catch (err) {
-    console.error("Error in /api/meta/adaccounts:", err?.response?.data || err.message);
+    console.error("Error in /api/meta/adaccounts:", err?.response?.data || err);
     res.status(500).json({
       ok: false,
       error: "Failed to fetch adaccounts",
@@ -113,8 +154,10 @@ router.post("/adaccounts", async (req, res) => {
 });
 
 // ------------------------
-// 3) Campaigns by Account (FIXED ✔ no act_act_…)
+// 4) Campaigns by Account
 // ------------------------
+// POST /api/meta/campaigns/:accountId
+// Body: { accessToken }
 router.post("/campaigns/:accountId", async (req, res) => {
   try {
     const { accessToken } = req.body || {};
@@ -122,7 +165,7 @@ router.post("/campaigns/:accountId", async (req, res) => {
 
     if (!ensureAccessToken(accessToken, res)) return;
 
-    accountId = normalizeAccountId(accountId); // FIX
+    accountId = normalizeAccountId(accountId);
     if (!accountId) {
       return res.status(400).json({ ok: false, error: "Missing accountId" });
     }
@@ -132,14 +175,15 @@ router.post("/campaigns/:accountId", async (req, res) => {
     const response = await axios.get(url, {
       headers: metaHeaders(accessToken),
       params: {
-        fields: "id,name,status,objective,daily_budget,created_time",
+        fields:
+          "id,name,status,objective,daily_budget,created_time",
         limit: 500
       }
     });
 
     res.json({ ok: true, data: response.data });
   } catch (err) {
-    console.error("Error in /api/meta/campaigns:", err?.response?.data || err.message);
+    console.error("Error in /api/meta/campaigns:", err?.response?.data || err);
     res.status(500).json({
       ok: false,
       error: "Failed to fetch campaigns",
@@ -149,8 +193,10 @@ router.post("/campaigns/:accountId", async (req, res) => {
 });
 
 // ------------------------
-// 4) Insights by Campaign (FIXED)
+// 5) Insights by Campaign
 // ------------------------
+// POST /api/meta/insights/:campaignId
+// Body: { accessToken, timeRangePreset }
 router.post("/insights/:campaignId", async (req, res) => {
   try {
     const { accessToken, timeRangePreset } = req.body || {};
@@ -161,47 +207,51 @@ router.post("/insights/:campaignId", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing campaignId" });
     }
 
-    // ---- FIX: Meta braucht ISO-Daten, nicht UNIX ----
+    // Zeitfenster bestimmen
     const now = new Date();
     const today = new Date(now.toISOString().split("T")[0]);
 
-    let since, until;
+    let since;
+    let until;
 
     switch (timeRangePreset) {
       case "today":
         since = today;
         until = now;
         break;
-
       case "yesterday":
         since = new Date(today.getTime() - 86400000);
         until = today;
         break;
-
       case "last_7d":
         since = new Date(today.getTime() - 7 * 86400000);
-        until = now;
+        until = today;
         break;
-
+      case "last_14d":
+        since = new Date(today.getTime() - 14 * 86400000);
+        until = today;
+        break;
       case "last_30d":
       default:
         since = new Date(today.getTime() - 30 * 86400000);
-        until = now;
+        until = today;
         break;
     }
+
+    const formatDate = (d) => d.toISOString().split("T")[0];
 
     const url = `https://graph.facebook.com/v21.0/${campaignId}/insights`;
 
     const response = await axios.get(url, {
       headers: metaHeaders(accessToken),
       params: {
+        time_range: JSON.stringify({
+          since: formatDate(since),
+          until: formatDate(until)
+        }),
         fields:
-          "impressions,clicks,spend,ctr,cpm,website_purchase_roas,actions,action_values",
-        time_range: {
-          since: since.toISOString().split("T")[0],
-          until: until.toISOString().split("T")[0]
-        },
-        limit: 500
+          "impressions,clicks,spend,ctr,cpc,cpm,actions,action_values,website_purchase_roas",
+        limit: 90
       }
     });
 
@@ -217,8 +267,10 @@ router.post("/insights/:campaignId", async (req, res) => {
 });
 
 // ------------------------
-// 5) Ads (inkl. Creatives) (FIXED ✔ no act_act_…)
+// 6) Ads inkl. Creatives
 // ------------------------
+// POST /api/meta/ads/:accountId
+// Body: { accessToken }
 router.post("/ads/:accountId", async (req, res) => {
   try {
     const { accessToken } = req.body || {};
@@ -226,7 +278,7 @@ router.post("/ads/:accountId", async (req, res) => {
 
     if (!ensureAccessToken(accessToken, res)) return;
 
-    accountId = normalizeAccountId(accountId); // FIX
+    accountId = normalizeAccountId(accountId);
     if (!accountId) {
       return res.status(400).json({ ok: false, error: "Missing accountId" });
     }
@@ -237,43 +289,17 @@ router.post("/ads/:accountId", async (req, res) => {
       headers: metaHeaders(accessToken),
       params: {
         fields:
-          "id,name,status,creative{object_story_spec,thumbnail_url,effective_object_story_id},insights{impressions,clicks,spend,ctr,cpc,cpm,purchase_roas}",
+          "id,name,status,creative{object_story_spec,thumbnail_url},insights{impressions,clicks,spend,ctr,cpc,cpm,website_purchase_roas,actions,action_values}",
         limit: 500
       }
     });
 
     res.json({ ok: true, data: response.data });
   } catch (err) {
-    console.error("Error in /api/meta/ads:", err?.response?.data || err.message);
+    console.error("Error in /api/meta/ads:", err?.response?.data || err);
     res.status(500).json({
       ok: false,
       error: "Failed to fetch ads",
-      details: err?.response?.data || err.message
-    });
-  }
-});
-
-// ------------------------
-// 6) /me – User Info
-// ------------------------
-router.post("/me", async (req, res) => {
-  try {
-    const { accessToken } = req.body || {};
-    if (!ensureAccessToken(accessToken, res)) return;
-
-    const url = "https://graph.facebook.com/v21.0/me";
-
-    const response = await axios.get(url, {
-      headers: metaHeaders(accessToken),
-      params: { fields: "id,name,email" }
-    });
-
-    res.json({ ok: true, data: response.data });
-  } catch (err) {
-    console.error("Error in /api/meta/me:", err?.response?.data || err.message);
-    res.status(500).json({
-      ok: false,
-      error: "Failed to fetch user profile",
       details: err?.response?.data || err.message
     });
   }
