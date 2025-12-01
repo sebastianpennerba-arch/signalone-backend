@@ -2,7 +2,6 @@
 
 const express = require("express");
 
-// FIXED PATH -> richtige Ordnerstruktur
 const {
   analyzeCreativePerformance,
   analyzeOffer,
@@ -17,14 +16,16 @@ router.get("/health", (req, res) => {
 });
 
 // MAIN ANALYSIS ENDPOINT
+// POST /api/sensei/analyze
+// Body: { creatives: [...], campaigns?: [...] }
 router.post("/analyze", async (req, res) => {
   try {
-    const { creatives, campaigns } = req.body;
+    const { creatives, campaigns } = req.body || {};
 
-    if (!creatives || !Array.isArray(creatives)) {
+    if (!Array.isArray(creatives) || !creatives.length) {
       return res.status(400).json({
         success: false,
-        error: "Missing or invalid creatives array"
+        error: "Missing or invalid 'creatives' array"
       });
     }
 
@@ -43,13 +44,12 @@ router.post("/analyze", async (req, res) => {
         ...offer.recommendations
       ]
     });
-
   } catch (err) {
     console.error("Sensei error:", err);
     res.status(500).json({
       success: false,
       error: "Sensei processing failed",
-      details: err.message
+      details: err.message || String(err)
     });
   }
 });
