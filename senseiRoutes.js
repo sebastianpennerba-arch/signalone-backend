@@ -1,135 +1,64 @@
 // ============================================================
-// Sensei API Routes - Fixed Version
-// Added: Better error handling, Input validation
+// senseiRoutes.js - FIXED
 // ============================================================
 
 const express = require('express');
+
+// ✅ KORRIGIERTER PFAD!
+const { 
+  analyzeCreativePerformance, 
+  analyzeOffer, 
+  analyzeHooks 
+} = require('./api/sensei/analyze/sensei-api');
+
 const router = express.Router();
-const {
-  analyzeCreativePerformance,
-  analyzeOffer,
-  analyzeHooks
-} = require('./sensei-api');
 
-// ============================================================
+// HEALTH CHECK
+router.get('/health', (req, res) => {
+  res.json({ 
+    ok: true, 
+    status: 'sensei-module-active' 
+  });
+});
+
+// MAIN ANALYSIS ENDPOINT
 // POST /api/sensei/analyze
-// Main analysis endpoint supporting multiple modes
-// ============================================================
-
-router.post('/analyze', async (req, res, next) => {
+// Body: { creatives: [...], campaigns?: [...] }
+router.post('/analyze', async (req, res) => {
   try {
-    const { creatives, campaigns, mode } = req.body;
+    const { creatives, campaigns } = req.body;
     
-    // Validate input
-    if (!mode || typeof mode !== 'string') {
+    if (!Array.isArray(creatives) || !creatives.length) {
       return res.status(400).json({
-        ok: false,
-        error: 'Missing or invalid "mode" parameter. Expected: "creative", "offer", or "hook"'
+        success: false,
+        error: 'Missing or invalid creatives array'
       });
     }
     
-    let result;
+    const performance = analyzeCreativePerformance(creatives);
+    const offer = analyzeOffer(campaigns);
+    const hook = analyzeHooks(creatives);
     
-    switch (mode.toLowerCase()) {
-      case 'creative':
-      case 'performance':
-        if (!Array.isArray(creatives)) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Mode "creative" requires "creatives" array'
-          });
-        }
-        result = {
-          performance: analyzeCreativePerformance(creatives),
-          source: 'live',
-          timestamp: new Date().toISOString()
-        };
-        break;
-        
-      case 'offer':
-      case 'funnel':
-        if (!Array.isArray(campaigns)) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Mode "offer" requires "campaigns" array'
-          });
-        }
-        result = {
-          offer: analyzeOffer(campaigns),
-          source: 'live',
-          timestamp: new Date().toISOString()
-        };
-        break;
-        
-      case 'hook':
-      case 'hooks':
-        if (!Array.isArray(creatives)) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Mode "hook" requires "creatives" array'
-          });
-        }
-        result = {
-          hook: analyzeHooks(creatives),
-          source: 'live',
-          timestamp: new Date().toISOString()
-        };
-        break;
-        
-      case 'full':
-      case 'all':
-        // Run all analyses
-        result = {
-          performance: Array.isArray(creatives) 
-            ? analyzeCreativePerformance(creatives) 
-            : null,
-          offer: Array.isArray(campaigns) 
-            ? analyzeOffer(campaigns) 
-            : null,
-          hook: Array.isArray(creatives) 
-            ? analyzeHooks(creatives) 
-            : null,
-          source: 'live',
-          timestamp: new Date().toISOString()
-        };
-        break;
-        
-      default:
-        return res.status(400).json({
-          ok: false,
-          error: `Unknown mode: "${mode}". Valid modes: creative, offer, hook, full`
-        });
-    }
-    
-    return res.json({
-      ok: true,
-      data: result
+    res.json({
+      success: true,
+      performance,
+      offer,
+      hook,
+      recommendations: [
+        ...performance.recommendations,
+        ...hook.recommendations,
+        ...offer.recommendations
+      ]
     });
     
   } catch (err) {
-    console.error('Error in /api/sensei/analyze:', err);
-    next({
-      statusCode: 500,
-      message: 'Sensei analysis failed',
-      details: err.message
+    console.error('Sensei error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Sensei processing failed',
+      details: err.message || String(err)
     });
   }
-});
-
-// ============================================================
-// GET /api/sensei/health
-// Health check for Sensei engine
-// ============================================================
-
-router.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    service: 'Sensei AI Engine',
-    version: '2.0.0',
-    modes: ['creative', 'offer', 'hook', 'full'],
-    status: 'operational',
-    timestamp: new Date().toISOString()
-  });
 });
 
 module.exports = router;
