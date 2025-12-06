@@ -1,4 +1,4 @@
-// server.js – SignalOne Backend (Render)
+// server.js â€“ SignalOne Backend (Render)
 
 const express = require("express");
 const cors = require("cors");
@@ -32,7 +32,7 @@ app.get("/", (req, res) => {
 app.use("/api/meta", metaRoutes);
 app.use("/api/sensei", senseiRoutes);
 
-// --- Fallback 404 für unbekannte Routen ---
+// --- Fallback 404 fÃ¼r unbekannte Routen ---
 app.use((req, res) => {
   res.status(404).json({
     ok: false,
@@ -44,5 +44,5 @@ app.use((req, res) => {
 // --- Start ---
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`SignalOne Backend läuft auf Port ${port}`);
+  console.log(`SignalOne Backend lÃ¤uft auf Port ${port}`);
 });
