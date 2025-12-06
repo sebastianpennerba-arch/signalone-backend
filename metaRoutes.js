@@ -1,4 +1,4 @@
-// metaRoutes.js – Meta OAuth + Proxy Routen
+// metaRoutes.js â€“ Meta OAuth + Proxy Routen
 
 const express = require("express");
 const axios = require("axios");
@@ -29,7 +29,7 @@ function metaHeaders(accessToken) {
 }
 
 // ------------------------
-// 1) OAuth Code → Token
+// 1) OAuth Code â†’ Token
 // ------------------------
 // POST /api/meta/oauth/token
 // Body: { code, redirectUri? }
